@@ -1,5 +1,5 @@
 // Tier-2 e2e: ASR. q16k.wav goes through the real server.mjs proxy to the real
-// audio.cpp — the exact request shape the browser sends (index.html asrForm).
+// audio.cpp — the exact request shape the browser sends (web/main/index.html asrForm).
 // Auto-skips when audio.cpp is not running or the local fixture is absent.
 import { test } from "node:test";
 import assert from "node:assert/strict";

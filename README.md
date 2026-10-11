@@ -16,7 +16,23 @@ dropped from the audio.cpp config, freeing ~1.1 GB VRAM.
 
 ## Open it
 
+Each UI experiment lives in its own `web/<ui>/` folder; `start.sh` picks which one to
+serve — `/` is always the chosen UI:
+
+    ./start.sh            # main app
+    ./start.sh chat       # friend-chat UI
+    ./start.sh talk       # mobile one-button UI
+    ./start.sh talk --tls # + any extra arg is passed through to server.mjs
+
     https://<your-node>.<tailnet>.ts.net:8443/
+
+Three experiments, same bridge:
+
+| ui | what it is |
+|---|---|
+| `main` | the full voice app: channels, streaming ASR transcript, live transcript + speech |
+| `chat` | friend-chat UI: full answers on screen with per-answer curation |
+| `talk` | **mobile one-button UX**: hold to talk, release to send, press to stop; the status line is driven by server events (transcribing → thinking → answering → speaking) |
 
 URL parameters preset a session (shareable/bookmarkable):
 
@@ -107,7 +123,7 @@ binaries — Metal backend, no CUDA needed:
     curl -LO https://huggingface.co/audio-cpp/audio.cpp-gguf/resolve/main/Nemotron-3.5-ASR-Streaming-0.6B-GGUF/nemotron-3.5-asr-streaming-0.6b-q8_0.gguf
     curl -LO https://huggingface.co/audio-cpp/audio.cpp-gguf/resolve/main/Kokoro-82M-GGUF/kokoro-82m-q8_0.gguf
 
-    # 4. config — the model ids MUST match ASR_MODEL / TTS_MODEL in index.html
+    # 4. config — the model ids MUST match ASR_MODEL / TTS_MODEL in web/main/index.html
     cat > server.json <<'JSON'
     {
       "host": "127.0.0.1",
@@ -234,7 +250,7 @@ from curl (where the body is sent all at once).
 - Partial captions re-decode the audio so far, so text can visibly revise mid-sentence;
   the final transcript comes from a separate clean pass on the completed utterance.
 - `qwen3-asr` (31 languages) and `voxtral-asr` (4B, 13 languages) are installed as ASR
-  alternatives — swap `ASR_MODEL` in index.html to compare. voxtral needs the S2S
+  alternatives — swap `ASR_MODEL` in web/main/index.html to compare. voxtral needs the S2S
   model's VRAM freed first.
 - `createScriptProcessor` is gone (it also had a bad buffer size and monitored the mic);
   capture now uses an AudioWorklet with a gain-0 sink so the mic is never played back.

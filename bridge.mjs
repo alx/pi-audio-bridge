@@ -1,6 +1,6 @@
 // pi voice bridge: voice transcript -> persistent pi session -> spoken reply.
 //
-// Contract (consumed by index.html):
+// Contract (consumed by web/main/index.html):
 //   POST /bridge/reply  {"text": "..."}
 //   -> 200, Content-Type: audio/L16;rate=24000  (raw PCM s16le mono), streamed
 //      X-Voice-Summary: the speakable text that was spoken (URL-encoded)

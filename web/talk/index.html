@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>pi — talk</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#12141a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+/* pi — talk: one button, hold to talk, release to send. Mobile first. */
+:root {
+  --bg:#12141a; --panel:#1b1e27; --ink:#e8eaf0; --dim:#8b90a0;
+  --line:#2a2e3a; --acc:#5b8def; --rec:#e8655a;
+}
+* { box-sizing:border-box; }
+html,body { height:100%; }
+body { margin:0; background:var(--bg); color:var(--ink);
+  font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  display:flex; flex-direction:column; -webkit-user-select:none; user-select:none;
+  touch-action:manipulation; overscroll-behavior:none; }
+
+/* ---------- header ---------- */
+header { display:flex; align-items:center; gap:10px; padding:10px 14px;
+  padding-top:calc(10px + env(safe-area-inset-top)); background:var(--panel);
+  border-bottom:1px solid var(--line); z-index:5; }
+.avatar { width:36px; height:36px; border-radius:50%; flex:none; display:flex; align-items:center;
+  justify-content:center; font-size:19px; font-weight:700; color:#fff;
+  background:linear-gradient(135deg,#7aa5f3,#5b8def 55%,#8d6ee8); }
+.who { line-height:1.15; min-width:0; }
+.who b { font-size:15px; }
+.who small { display:block; color:var(--dim); font-size:12px; white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis; max-width:38vw; }
+.spacer { flex:1; }
+select { font:inherit; font-size:13px; color:var(--ink); background:#22252f;
+  border:1px solid var(--line); border-radius:999px; padding:5px 8px; cursor:pointer; }
+.lnk { color:var(--dim); text-decoration:none; font-size:13px; padding:5px 8px;
+  border:1px solid var(--line); border-radius:999px; }
+.lnk:active { color:var(--ink); }
+
+/* ---------- main ---------- */
+main { flex:1; display:flex; flex-direction:column; align-items:center;
+  justify-content:flex-end; padding:14px 20px 0; gap:10px; }
+
+#answer { width:100%; max-width:640px; max-height:32vh; overflow-y:auto;
+  background:var(--panel); border:1px solid var(--line); border-radius:16px;
+  padding:12px 14px; font-size:14.5px; }
+#answer:empty { display:none; }
+#answer .you { color:var(--dim); font-size:13px; margin:0 0 6px; }
+#answer .you b { color:var(--ink); font-weight:600; }
+#ansText { white-space:pre-wrap; word-break:break-word; }
+#ansText .cur { display:inline-block; width:8px; height:15px; background:var(--acc);
+  vertical-align:-2px; animation:blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity:0; } }
+
+#statusWrap { text-align:center; margin:6px 0; min-height:56px; display:flex;
+  flex-direction:column; justify-content:center; }
+#status { font-size:21px; font-weight:600; letter-spacing:.2px; }
+#status.rec { color:var(--rec); }
+#status.speaking { color:#e5b94c; }
+#status.err { color:var(--rec); }
+#sub { color:var(--dim); font-size:13.5px; margin-top:3px; min-height:18px; }
+#status.waiting::after { content:""; animation:dots 1.4s steps(4) infinite; }
+@keyframes dots { 0% {content:""} 25% {content:"."} 50% {content:".."} 75% {content:"..."} }
+
+/* ---------- button ---------- */
+#btnwrap { position:relative; width:196px; height:196px; flex:none; margin:4px 0;
+  display:flex; align-items:center; justify-content:center; }
+#ring { position:absolute; inset:0; border-radius:50%; opacity:0; transition:opacity .15s; }
+#ptt { position:relative; z-index:2; width:172px; height:172px; border-radius:50%;
+  border:none; cursor:pointer; color:#fff;
+  background:linear-gradient(135deg,#6b93f0,#5b8def 55%,#8d6ee8);
+  box-shadow:0 10px 30px rgba(91,141,239,.35), inset 0 2px 8px rgba(255,255,255,.18);
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px;
+  font:inherit; touch-action:none; -webkit-touch-callout:none;
+  transition:transform .08s, box-shadow .2s, background .2s; }
+#ptt:active, #ptt.down { transform:scale(.94); }
+#ptt .ico { font-size:44px; line-height:1; }
+#ptt .lbl { font-size:13px; font-weight:600; letter-spacing:.4px; opacity:.9; }
+#ptt.rec { background:radial-gradient(circle at 50% 40%, #f08a80, #d9534a 70%);
+  box-shadow:0 10px 34px rgba(232,101,90,.5); }
+#ptt.stop { background:#3a3f4d; box-shadow:0 8px 22px rgba(0,0,0,.4); }
+
+#hint { color:var(--dim); font-size:13px; text-align:center; padding:10px 16px
+  calc(14px + env(safe-area-inset-bottom)); margin-top:auto; }
+#hint b { color:var(--ink); font-weight:600; }
+</style>
+</head>
+<body>
+<header>
+  <div class="avatar">π</div>
+  <div class="who"><b>pi</b><small id="health">checking…</small></div>
+  <span class="spacer"></span>
+  <select id="langOut" title="reply language (spoken + written)"></select>
+  <select id="langIn" title="speech recognition language"></select>
+</header>
+
+<main>
+  <div id="answer"><div class="you" id="youLine" hidden></div><div id="ansText"></div></div>
+
+  <div id="statusWrap">
+    <div id="status">Hold the button and talk</div>
+    <div id="sub">hold = record · release = send · press while I speak = stop</div>
+  </div>
+
+  <div id="btnwrap">
+    <div id="ring"></div>
+    <button id="ptt" aria-label="hold to talk">
+      <span class="ico" id="pttIco">🎙</span>
+      <span class="lbl" id="pttLbl">hold to talk</span>
+    </button>
+  </div>
+
+  <div id="hint"><b>hold</b> to talk · <b>release</b> to send · <b>press</b> to stop me</div>
+</main>
+
+<script src="talk.js"></script>
+</body>
+</html>

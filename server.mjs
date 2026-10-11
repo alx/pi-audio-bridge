@@ -5,8 +5,10 @@
 // /live endpoints need.
 //
 // Two transport modes share one routing/proxy core:
-//   node server.mjs            plain HTTP/1.1 loopback (:8091)
+//   node server.mjs [ui]       plain HTTP/1.1 loopback (:8091), serve web/<ui>
 //   node server.mjs --tls      HTTPS + HTTP/2, ALPN h2 only (:8443)
+//   node server.mjs --ui talk  pick an experiment (or: ./start.sh talk)
+// UI defaults to "main"; each experiment lives in web/<ui>/ (see start.sh).
 // Chrome requires HTTP/2 (ALPN "h2") to accept streaming request bodies, so remote
 // access goes through --tls. Any publicly trusted cert works; to provision one on
 // your own infra without running a CA: enable HTTPS certs on your tailnet
@@ -18,7 +20,25 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 
-const WEB = path.dirname(new URL(import.meta.url).pathname);
+// UI experiment to serve: --ui <name>, --ui=<name>, or a positional arg.
+// Each experiment is a folder of static files under web/; "/" maps to its index.html.
+let UI = "main";
+{
+  const argv = process.argv.slice(2);
+  const taken = new Set();
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--ui") { UI = argv[++i]; taken.add(i - 1); taken.add(i); }
+    else if (a.startsWith("--ui=")) UI = a.slice(5);
+    else if (!a.startsWith("--") && !taken.has(i) && !/^\d+$/.test(a)) UI = a;
+  }
+}
+if (!/^[-a-z0-9][-a-z0-9._]*$/.test(UI))
+  throw new Error(`bad --ui name: ${UI} (want web/<name> folder, e.g. main|chat|talk)`);
+const ROOT = path.dirname(new URL(import.meta.url).pathname);
+const WEB = path.join(ROOT, "web", UI);
+if (!fs.existsSync(path.join(WEB, "index.html")))
+  throw new Error(`no web/${UI}/index.html — available: ${fs.readdirSync(path.join(ROOT, "web")).join(", ")}`);
 const TLS = process.argv.includes("--tls") || process.env.TLS === "1";
 const PORT = Number(process.env.PORT || (TLS ? 8443 : 8091));
 const HOST = process.env.HOST || (TLS ? "0.0.0.0" : "127.0.0.1");   // TLS is reachable via the tailnet IP
@@ -159,5 +179,5 @@ if (TLS) {
   server.listen(PORT, HOST, () => console.log(`pi-audio-bridge HTTPS/h2 on ${HOST}:${PORT} (cert ${path.basename(CERT)})`));
 } else {
   const server = http.createServer((req, res) => handle(req.method, req.url, req.headers, req, res));
-  server.listen(PORT, HOST, () => console.log(`pi-audio-bridge on http://${HOST}:${PORT}  (proxying /v1/* + /health -> ${API_HOST}:${API_PORT})`));
+  server.listen(PORT, HOST, () => console.log(`pi-audio-bridge (ui: ${UI}) on http://${HOST}:${PORT}  (proxying /v1/* + /health -> ${API_HOST}:${API_PORT})`));
 }

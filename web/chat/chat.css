@@ -115,3 +115,6 @@ body.curated #shade { opacity:1; pointer-events:auto; }
 .dfoot button { flex:1; font-size:13px; padding:8px; border-radius:9px; border:1px solid var(--line); background:#faf8f4; cursor:pointer; color:var(--ink); }
 .dfoot button:hover { border-color:var(--acc); }
 .dfoot button.danger:hover { border-color:var(--bad); color:var(--bad); }
+
+.lnk { color:var(--dim); text-decoration:none; font-size:13px; padding:6px 10px; border:1px solid var(--line); border-radius:999px; }
+.lnk:active { color:var(--ink); }
