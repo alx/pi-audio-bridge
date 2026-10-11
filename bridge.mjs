@@ -227,11 +227,11 @@ pi.start();
 
 /* ------------------------------------------------------------------ tts */
 
-async function synthesize(text) {
+async function synthesize(text, voice, language) {
   const r = await fetch(`${AUDIO}/v1/audio/speech`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: TTS_MODEL, input: text, voice: TTS_VOICE, language: TTS_LANG }),
+    body: JSON.stringify({ model: TTS_MODEL, input: text, voice: voice || TTS_VOICE, language: language || TTS_LANG }),
     signal: AbortSignal.timeout(60000),
   });
   if (!r.ok) throw new Error(`tts ${r.status}: ${(await r.text()).slice(0, 150)}`);
@@ -301,6 +301,77 @@ function readBody(req, limit = 64 * 1024) {
 
 let lastTurn = null;
 
+// POST /bridge/chat {text, voice?, language?}
+// Same pi turn as /bridge/reply, but the client gets an SSE stream of JSON events
+// instead of raw PCM, so a UI can show (and curate) the full answer, not just hear it:
+//   {type:"text.delta", text}      raw assistant delta, as it streams
+//   {type:"sentence", text}        the exact sentence just queued for speech
+//   {type:"audio", data, rate}     base64 s16le mono PCM, one event per sentence
+//   {type:"done", text, spoken, ms}  text = full (unabridged) assistant text
+//   {type:"error", message}
+async function serveChat(res, transcript, ttsVoice, ttsLang) {
+  const t0 = Date.now();
+  let closed = false;
+  res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", "x-accel-buffering": "no" });
+  const emit = ev => { if (!closed && !res.writableEnded) { try { res.write(`data: ${JSON.stringify(ev)}\n\n`); } catch {} } };
+
+  let fullText = "";
+  let spoken = "";
+  let cueSent = false;
+  const speechQueue = [];
+  let pumping = false;
+
+  async function pump() {
+    if (pumping) return;
+    pumping = true;
+    try {
+      while (speechQueue.length) {
+        const s = speechQueue.shift();
+        try { const { bytes, rate } = await synthesize(s, ttsVoice, ttsLang); console.log(`[tts-out] rate=${rate} bytes=${bytes.length}`); emit({ type: "audio", data: Buffer.from(bytes).toString("base64"), rate }); }
+        catch (e) { console.error("[tts]", e.message); }
+      }
+    } finally { pumping = false; }
+  }
+  const speak = s => { emit({ type: "sentence", text: s }); speechQueue.push(s); pump(); };
+
+  const cueTimer = setTimeout(() => {
+    if (spoken || cueSent) return;
+    cueSent = true;
+    speak(WORKING_CUE);
+  }, FIRST_SENTENCE_MS);
+
+  try {
+    const splitter = new SentenceSplitter(part => {
+      if (spoken.length >= MAX_TOTAL_SPOKEN) return;
+      const s = speakable(part, MAX_SPOKEN_CHARS);
+      if (!s) return;
+      spoken += (spoken ? " " : "") + s;
+      speak(s);
+    });
+
+    const text = await pi.run(transcript, {
+      onDelta: d => { fullText += d; emit({ type: "text.delta", text: d }); splitter.push(d); },
+      onTool: (name) => { if (!spoken && !cueSent) { cueSent = true; speak(WORKING_CUE); } },
+    });
+    splitter.flush();
+
+    if (!spoken.trim()) speak(text ? "That is done. The details are on screen." : "I have no reply for that.");
+    else if (text && text.length > spoken.length * 1.6) speak("The rest is on screen.");
+
+    while (speechQueue.length || pumping) await new Promise(r => setTimeout(r, 50));
+
+    lastTurn = { summary: spoken, ms: Date.now() - t0, at: new Date().toISOString(), transcript };
+    emit({ type: "done", text, spoken, ms: Date.now() - t0 });
+  } catch (e) {
+    console.error("[bridge:chat]", e.message);
+    emit({ type: "error", message: e.message });
+  } finally {
+    clearTimeout(cueTimer);
+    closed = true;
+    try { res.end(); } catch {}
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${HOST}:${PORT}`);
   if (url.pathname === "/bridge/last") {
@@ -311,7 +382,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { "content-type": "application/json" });
     return res.end(JSON.stringify({ ok: true, busy: pi.busy, cwd: PI_CWD, tts: `${TTS_MODEL}/${TTS_VOICE}` }));
   }
-  if (url.pathname !== "/bridge/reply" || req.method !== "POST") {
+  if ((url.pathname !== "/bridge/reply" && url.pathname !== "/bridge/chat") || req.method !== "POST") {
     res.writeHead(404, { "content-type": "text/plain" });
     return res.end("not found");
   }
@@ -320,9 +391,16 @@ const server = http.createServer(async (req, res) => {
     return res.end("busy: a pi turn is already running");
   }
 
-  let transcript = "";
-  try { transcript = (JSON.parse(await readBody(req) || "{}").text || "").trim(); } catch {}
+  let transcript = "", ttsVoice = "", ttsLang = "";
+  try {
+    const b = JSON.parse(await readBody(req) || "{}");
+    transcript = (b.text || "").trim();
+    ttsVoice = typeof b.voice === "string" ? b.voice : "";
+    ttsLang = typeof b.language === "string" ? b.language : "";
+  } catch {}
   if (!transcript) { res.writeHead(400, { "content-type": "text/plain" }); return res.end("missing text"); }
+
+  if (url.pathname === "/bridge/chat") return serveChat(res, transcript, ttsVoice, ttsLang);
 
   const t0 = Date.now();
   let headersSent = false;
@@ -339,7 +417,7 @@ const server = http.createServer(async (req, res) => {
     try {
       while (speechQueue.length) {
         const s = speechQueue.shift();
-        try { const { bytes } = await synthesize(s); sendChunk(bytes); }
+        try { const { bytes, rate } = await synthesize(s, ttsVoice, ttsLang); console.log(`[tts-out] rate=${rate} bytes=${bytes.length}`); sendChunk(bytes); }
         catch (e) { console.error("[tts]", e.message); }
       }
     } finally { pumping = false; }

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>pi — chat</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="chat.css">
+</head>
+<body>
+<header>
+  <div class="avatar">π</div>
+  <div class="who"><b>pi</b><small id="status">here — talk or type below</small></div>
+  <span class="spacer"></span>
+  <button id="stopall" title="stop speaking">■ stop</button>
+  <div class="micpill" id="micpill" title="tap to mute / unmute the mic">
+    <span id="miclabel">mic off</span><span class="lvl"><i id="lvl"></i></span>
+  </div>
+  <select id="langOut" title="reply language (spoken + written)"></select>
+  <select id="langIn" title="speech recognition language"></select>
+  <button class="curbtn" id="curbtn" title="curation — review &amp; export">⭐<span class="n" id="curcount">0</span></button>
+</header>
+
+<main id="chat"><div class="inner" id="msgs">
+  <div class="hero" id="hero">
+    <div class="big">👋</div>
+    <h1>Hey, I'm pi</h1>
+    <p>Your coding buddy. Put on headphones, say hi, or just type below — then tap ⭐ to keep the answers worth remembering.</p>
+    <button id="startvoice">start the mic &amp; say hi</button>
+    <small>or skip the mic: type in the box below · talk over me any time to cut me off</small>
+  </div>
+</div></main>
+
+<div id="listen"></div>
+
+<footer>
+  <div class="bar">
+    <button class="icon mic" id="micbtn" title="tap to start / stop the mic">🎙</button>
+    <input id="field" type="text" placeholder="message pi…" autocomplete="off">
+    <button class="icon send" id="sendbtn" title="send">➤</button>
+  </div>
+  <div class="hint">headphones recommended — talk over pi to interrupt · ⭐ pins an answer for your curation rounds</div>
+</footer>
+
+<div id="shade"></div>
+<aside id="drawer">
+  <header>
+    <div class="avatar">π</div>
+    <div class="who"><b>curation</b><small>review answers, rate them, take notes, export</small></div>
+    <span class="spacer"></span>
+    <button class="curbtn" id="curclose" title="close">✕</button>
+  </header>
+  <div class="dfilters" id="dfilters">
+    <button data-f="all" class="on">all</button>
+    <button data-f="1">👍 good</button>
+    <button data-f="-1">👎 weak</button>
+    <button data-f="pin">⭐ pinned</button>
+  </div>
+  <div class="dbody" id="dbody"></div>
+  <div class="dfoot">
+    <button id="expmd">⤓ markdown</button>
+    <button id="expjs">⤓ json</button>
+    <button id="clearall" class="danger">clear all</button>
+  </div>
+</aside>
+
+<script src="chat-audio.js"></script>
+<script src="chat.js"></script>
+</body>
+</html>

@@ -90,6 +90,64 @@ For pi — install this repo as a pi package from git (not from npm):
 
     pi install git:github.com/alx/pi-audio-bridge
 
+### Audio backend on macOS (no compile step)
+
+Verified on Apple Silicon (M2, macOS 15) with the **audio.cpp v0.9.1** prebuilt
+binaries — Metal backend, no CUDA needed:
+
+    # 1. server binary (also: macos-x64-metal, ubuntu-cpu, ubuntu-cuda…)
+    curl -LO https://github.com/0xShug0/audio.cpp/releases/download/v0.9.1/audio-v0.9.1-bin-macos-arm64-metal.tar.gz
+    tar xzf audio-v0.9.1-bin-macos-arm64-metal.tar.gz
+
+    # 2. Kokoro TTS phonemizes with eSpeak-ng; the prebuilt does NOT bundle it.
+    #    Without it, /v1/audio/speech fails: 500 "Could not load eSpeak-ng".
+    brew install espeak-ng
+
+    # 3. model weights (~1.1 GB) from the official GGUF repo
+    curl -LO https://huggingface.co/audio-cpp/audio.cpp-gguf/resolve/main/Nemotron-3.5-ASR-Streaming-0.6B-GGUF/nemotron-3.5-asr-streaming-0.6b-q8_0.gguf
+    curl -LO https://huggingface.co/audio-cpp/audio.cpp-gguf/resolve/main/Kokoro-82M-GGUF/kokoro-82m-q8_0.gguf
+
+    # 4. config — the model ids MUST match ASR_MODEL / TTS_MODEL in index.html
+    cat > server.json <<'JSON'
+    {
+      "host": "127.0.0.1",
+      "port": 8090,
+      "backend": "metal",
+      "lazy_load": true,
+      "models": [
+        {
+          "id": "nemotron-asr",
+          "family": "nemotron_asr",
+          "path": "./models/nemotron-asr",
+          "task": "asr",
+          "mode": "streaming"
+        },
+        {
+          "id": "kokoro-tts",
+          "family": "kokoro_tts",
+          "path": "./models/kokoro-tts",
+          "task": "tts",
+          "mode": "offline"
+        }
+      ]
+    }
+    JSON
+
+    ./audiocpp_server --config server.json     # :8090
+
+Note: with a non-CUDA backend the server prints that performance and model
+coverage may be lower than CUDA — on M2 both stages ran well above real time
+(ASR RTF ≈ 0.3, TTS ≈ 0.2).
+
+### TTS voice/language — let the browser decide
+
+`POST /bridge/reply` accepts optional `voice` and `language` fields; the page
+sends the ones matching its `out=` selector, so French output is spoken by a
+French Kokoro voice. Without this the bridge falls back to its env defaults
+(`TTS_VOICE`/`TTS_LANG`, af_heart/en-us) — and an English voice phonemizing a
+foreign language sounds like noise (the "working cue is fine but the reply is
+garbled" symptom). `WORKING_CUE` stays English; set it via env if that annoys you.
+
 ## Run / restart
 
     node server.mjs            # plain HTTP/1.1 (:8091, loopback only)
@@ -106,6 +164,27 @@ Audio backend (5 models, lazy-load, max 3 resident) — from the audio.cpp-bin d
 Use **file-as-mic**: pick a 16 kHz wav (any short speech sample; `q16k.wav` is a
 local, git-ignored fixture on the dev machine) and press Start. It feeds the file
 through the same capture → transport → playback path at real-time pace.
+
+On macOS the fixture can be generated with the built-in tools (no ffmpeg):
+
+    say -o /tmp/s.aiff "Hello, this is a test."     # say -v Thomas for French
+    afconvert -f WAVE -d LEI16@16000 -c 1 /tmp/s.aiff q16k.wav
+
+### Backend sanity checks (no microphone needed)
+
+- **TTS→ASR round-trip**: synthesize a sentence with `/v1/audio/speech`, resample
+  to 16 kHz mono, transcribe it back with `/v1/audio/transcriptions`. If the text
+  comes back word-perfect, both stages (and the voice/language pairing) are good;
+  if the TTS side is broken (wrong voice for the language, broken weights) you get
+  garbage back. This caught the af_heart-on-French regression.
+- **`/v1/audio/transcriptions/live` needs an incrementally delivered body**
+  (Transfer-Encoding: chunked). `curl --data-binary @file` sends a pre-buffered
+  body and is rejected with "requires an incrementally delivered body" — that's
+  the endpoint telling you to stream, not a server bug.
+- **nemotron-asr in streaming mode requires mono 16 kHz**
+  ("streaming requires mono audio at the model sample rate"); the offline
+  multipart endpoint is more permissive. Resample with
+  `afconvert -f WAVE -d LEI16@16000 -c 1 in.wav out16k.wav`.
 
 ## Tests
 
